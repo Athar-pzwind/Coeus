@@ -34,48 +34,57 @@ function [stallData] = calculatestalltime(Out_DataAll,BladeData,filterflag)
         meanperctnearLocal = zeros(numWSP, numNodes);
         maxpercentnearLocal = zeros(numWSP, numNodes);
         minpercentnearLocal = zeros(numWSP, numNodes);
-        for i = 1:numWSP
-            currentWSP = Out_DataAll.(Outfolders{foldernum}).(WSP{i});
-            seeds = fieldnames(currentWSP);
-            for s = 1:length(seeds)
-                SeedData = currentWSP.(seeds{s});
-                % Select appropriate channel and time step
-                % Extract Angle of Attack profile safely as a column vector
-                current_AoA = parquetread(SeedData,"SelectedVariableNames",Sensor);
-                if isempty(current_AoA)
-                    continue; 
+       try
+            for i = 1:numWSP
+                currentWSP = Out_DataAll.(Outfolders{foldernum}).(WSP{i});
+                seeds = fieldnames(currentWSP);
+                for s = 1:length(seeds)
+                    SeedData = currentWSP.(seeds{s});
+                    % Select appropriate channel and time step
+                    % Extract Angle of Attack profile safely as a column vector
+                    current_AoA = parquetread(SeedData,"SelectedVariableNames",Sensor);
+                    if isempty(current_AoA)
+                        continue; 
+                    end
+                    % Threshold calculations
+                    current_AoA_matrix = current_AoA.Variables;
+                    AbvThrOcc_count  = (sum(current_AoA_matrix > static_stall',1));
+                    nearThrOcc_count = (sum(current_AoA_matrix > (static_stall' - toll),1));
+                    % Convert to timeline percentages
+                    sdpercent(s, :, i)     = ((dt .* AbvThrOcc_count) ./ simtime) * 100;
+                    sdpercentnear(s, :, i) = ((dt .* nearThrOcc_count) ./ simtime) * 100;
                 end
-                % Threshold calculations
-                AbvThrOcc_count  = table2array(sum(current_AoA > static_stall(nds),1));
-                nearThrOcc_count = table2array(sum(current_AoA > (static_stall(nds) - toll),1));
-                % Convert to timeline percentages
-                sdpercent(s, :, i)     = ((dt .* AbvThrOcc_count) ./ simtime) * 100;
-                sdpercentnear(s, :, i) = ((dt .* nearThrOcc_count) ./ simtime) * 100;
             end
-        end
+        catch ME
+            fprintf('Error Stall Time Calculation: %s\n', ME.message);
+       end
         
         %% 3. Statistical Aggregation
-        for i = 1:numWSP
-            for nds = 1:numNodes
-                % Extract the distribution vector across all seeds
-                seedsDistribution = sdpercentnear(:, nds, i);
-                % Compute maximums omitting placeholder NaNs
-                meanperctnearLocal(i,nds) = mean(seedsDistribution, 'omitnan');
-                maxVal = max(seedsDistribution, [], 'omitnan');
-                maxpercentnearLocal(i, nds) = maxVal;
-                minVal = min(seedsDistribution,[],'omitnan');
-                minpercentnearLocal(i, nds) = minVal;
-                if filterflag
-                    flag = IQRFilter(seedsDistribution,maxVal);
-                    temp = seedsDistribution;
-                    while flag
-                        temp(temp == max(temp, [], 'all', 'omitnan')) = NaN;
-                        maxVal = max(temp, [], 'omitnan');
-                        flag = IQRFilter(temp,maxVal);                        
-                    end
+        try
+            for i = 1:numWSP
+                for nds = 1:numNodes
+                    % Extract the distribution vector across all seeds
+                    seedsDistribution = sdpercentnear(:, nds, i);
+                    % Compute maximums omitting placeholder NaNs
+                    meanperctnearLocal(i,nds) = mean(seedsDistribution, 'omitnan');
+                    maxVal = max(seedsDistribution, [], 'omitnan');
                     maxpercentnearLocal(i, nds) = maxVal;
+                    minVal = min(seedsDistribution,[],'omitnan');
+                    minpercentnearLocal(i, nds) = minVal;
+                    if filterflag
+                        flag = IQRFilter(seedsDistribution,maxVal);
+                        temp = seedsDistribution;
+                        while flag
+                            temp(temp == max(temp, [], 'all', 'omitnan')) = NaN;
+                            maxVal = max(temp, [], 'omitnan');
+                            flag = IQRFilter(temp,maxVal);                        
+                        end
+                        maxpercentnearLocal(i, nds) = maxVal;
+                    end
                 end
             end
+        catch ME
+            fprintf('Error in Statistical Aggregation of Stall Time: %s\n', ME.message);
         end
 
         % Assign local block data to final output slice

@@ -6,7 +6,7 @@ function plotStallWeibull(stallData)
     numFolders = length(stallData(1,1,:));
     for folder = 1:numFolders
         for i = 1:numNodes
-            [AnualWeibulHours_Stall(i,folder),WindStall(:,i,folder)] = stalldistribution(WSP,stallData(:,i,folder),7.5,2);
+            [AnualWeibulHours_Stall(i,folder),WindStall(:,i,folder)] = stalldistribution(WSP,stallData(1:2:11,i,folder),7.5,2);
         end
     end
     figure()
